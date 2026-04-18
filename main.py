@@ -116,7 +116,7 @@ class WindowAsWallpaper:
 
         win32gui.MoveWindow(hwnd, target_x, target_y, target_w, target_h, True)
 
-    def find_window_for_process(self, pid, exe_path, timeout_ms):
+    def find_window_for_process(self, pid, exe_path, timeout_ms, target_title=None):
         """プロセスのウィンドウが生成されるまで待機して取得する"""
         start_time = time.time()
         target_exe_name = os.path.basename(exe_path).lower()
@@ -124,13 +124,21 @@ class WindowAsWallpaper:
         while (time.time() - start_time) * 1000 < timeout_ms:
             def callback(hwnd, results):
                 if win32gui.IsWindowVisible(hwnd):
+                    # 1. ウィンドウタイトルでの一致確認 (設定がある場合、優先度高)
+                    if target_title:
+                        window_title = win32gui.GetWindowText(hwnd)
+                        if target_title.lower() in window_title.lower():
+                            _, found_pid = win32process.GetWindowThreadProcessId(hwnd)
+                            results.append((hwnd, found_pid))
+                            return False
+
                     _, found_pid = win32process.GetWindowThreadProcessId(hwnd)
-                    # 1. 直接のPID一致を確認
+                    # 2. 直接のPID一致を確認
                     if found_pid == pid:
                         results.append((hwnd, found_pid))
                         return False
                     
-                    # 2. PID不一致でも実行ファイル名が一致すれば採用（リダイレクト対策）
+                    # 3. PID不一致でも実行ファイル名が一致すれば採用（リダイレクト対策）
                     try:
                         h_proc = win32api.OpenProcess(win32con.PROCESS_QUERY_INFORMATION | win32con.PROCESS_VM_READ, False, found_pid)
                         found_exe = win32process.GetModuleFileNameEx(h_proc, 0)
@@ -180,7 +188,7 @@ class WindowAsWallpaper:
                 
                 # ウィンドウの出現を待機
                 wait_ms = item.get('wait_ms', 2000)
-                result = self.find_window_for_process(proc.pid, item['path'], wait_ms)
+                result = self.find_window_for_process(proc.pid, item['path'], wait_ms, item.get('title'))
                 
                 if result:
                     hwnd, found_pid = result
@@ -272,7 +280,8 @@ if __name__ == "__main__":
         sample_config = [
             {
                 "path": os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'conhost.exe'),
-                "args": "cmd.exe /k \"echo WindowAsWallpaper - conhost Sample\"",
+                "args": "cmd.exe /k \"title conhost Sample && echo WindowAsWallpaper - conhost Sample\"",
+                "title": "conhost Sample",
                 "monitor": 0,
                 "x": 0, "y": 0, "w": 2, "h": 2,
                 "wait_ms": 1000,
