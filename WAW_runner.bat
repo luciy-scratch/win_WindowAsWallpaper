@@ -18,7 +18,7 @@ if %errorlevel% neq 0 goto :ADMIN_ERROR
 echo Administrator privileges confirmed. Proceeding...
 
 :: Run main script
-start .\uv.exe run main.py "setting.json"
+start .\uv.exe run main.py "settings.json"
 
 :: Closing launcher
 echo Closing launcher
