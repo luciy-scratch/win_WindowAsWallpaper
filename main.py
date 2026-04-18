@@ -231,8 +231,8 @@ if __name__ == "__main__":
         # サンプル設定ファイルの作成
         sample_config = [
             {
-                "path": "notepad.exe",
-                "args": "",
+                "path": "conhost.exe",
+                "args": "cmd.exe /k echo WindowAsWallpaper - conhost Sample",
                 "monitor": 0,
                 "x": 0, "y": 0, "w": 2, "h": 2,
                 "wait_ms": 1000,
