@@ -182,7 +182,7 @@ class WindowAsWallpaper:
             exe_name = os.path.basename(item['path'])
             self.console.print(f"🚀 [bold]({i+1}/{len(settings)}) 起動中:[/bold] [cyan]{exe_name}[/cyan] [dim]{item.get('args', '')}[/dim]")
             try:
-                proc = subprocess.Popen(item['path'] + " " + item.get('args', ''))
+                proc = subprocess.Popen(item['path'] + " " + item.get('args', ''), creationflags=win32con.CREATE_NEW_CONSOLE)
                 
                 # ジョブオブジェクトにプロセスを割り当て
                 try:
