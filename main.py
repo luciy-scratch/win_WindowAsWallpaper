@@ -8,6 +8,7 @@ import win32gui
 import win32con
 import win32api
 import win32process
+import ctypes
 import pystray
 from PIL import Image, ImageDraw
 
@@ -63,11 +64,13 @@ class WindowAsWallpaper:
         style &= ~win32con.WS_MINIMIZEBOX
         style &= ~win32con.WS_MAXIMIZEBOX
         style &= ~win32con.WS_SYSMENU
+        style &= ~win32con.WS_VSCROLL
+        style &= ~win32con.WS_HSCROLL
         
         win32gui.SetWindowLong(hwnd, win32con.GWL_STYLE, style)
         
-        # スクロールバーの非表示（一部のアプリに有効）
-        win32gui.ShowScrollBar(hwnd, win32con.SB_BOTH, False)
+        # win32guiにShowScrollBarは無いためctypesを使用してWin32 APIを直接呼ぶ
+        ctypes.windll.user32.ShowScrollBar(hwnd, win32con.SB_BOTH, False)
 
     def position_window(self, hwnd, config):
         """
