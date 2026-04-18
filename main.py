@@ -228,9 +228,11 @@ class WindowAsWallpaper:
                 self.console.print(f"   ∟ [bold red]エラー:[/bold red] 起動に失敗しました。 [dim]{e}[/dim]")
 
         self.console.print("\n[bold green]全てのプロセスが配置されました。[/bold green]")
-        self.console.print("[bold yellow]3秒後に常駐モードに移行します...[/bold yellow]")
+        self.console.print("[bold yellow]3秒後にアプリケーションを常駐モードに切り替えます。[/bold yellow]")
+        self.console.print("[bold yellow]アプリケーションを終了する場合はタスクトレイのアイコンから\"Exit\"を選択してください。[/bold yellow]")
         time.sleep(3)
         self.stay_resident()
+        
 
     def _create_element_icon(self):
         """トレイアイコン用の画像を生成する（青い背景に白い四角）"""
@@ -271,6 +273,8 @@ class WindowAsWallpaper:
         self.console.print("[bold red]終了処理中...[/bold red]")
         self.running = False
         if self.icon:
+            # アイコンの処理停止前に非表示に設定する(停止までに時間がかかる可能性があるため)
+            self.icon.visible = False
             self.icon.stop()
         # ジョブオブジェクトのハンドルを閉じることで、グループ化された全プロセスを終了させる
         if self.job_handle:
