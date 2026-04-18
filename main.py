@@ -8,12 +8,13 @@ import win32gui
 import win32con
 import win32api
 import win32process
+import win32job
 import ctypes
 import pystray
 from PIL import Image, ImageDraw
 
 # デバッグ用のフラグを定義
-switchConsoleVisible_inResidentMode = True # True=常駐モード中にコンソールウィンドウが非表示に設定される
+switchConsoleVisible_inResidentMode = False # True=常駐モード中にコンソールウィンドウが非表示に設定される
 
 class WindowAsWallpaper:
     def __init__(self, config_path):
@@ -23,6 +24,17 @@ class WindowAsWallpaper:
         self.icon = None
         self.running = True
         self.console_hwnd = ctypes.windll.kernel32.GetConsoleWindow()
+
+        # Windows Job Object を使用して、起動したプロセスをグループ化し、
+        # 親プロセス終了時に子プロセスも確実に終了するように設定する
+        self.job_handle = win32job.CreateJobObject(None, "")
+        extended_info = win32job.QueryInformationJobObject(
+            self.job_handle, win32job.JobObjectExtendedLimitInformation
+        )
+        extended_info['BasicLimitInformation']['LimitFlags'] |= win32job.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+        win32job.SetInformationJobObject(
+            self.job_handle, win32job.JobObjectExtendedLimitInformation, extended_info
+        )
 
     def get_worker_w(self):
         """WorkerWの取得。Wallpaper Engineなどで既に生成されている場合はそれを検出し、なければ生成させる。"""
@@ -104,21 +116,43 @@ class WindowAsWallpaper:
 
         win32gui.MoveWindow(hwnd, target_x, target_y, target_w, target_h, True)
 
-    def find_window_for_process(self, pid, timeout_ms):
+    def find_window_for_process(self, pid, exe_path, timeout_ms, target_title=None):
         """プロセスのウィンドウが生成されるまで待機して取得する"""
         start_time = time.time()
+        target_exe_name = os.path.basename(exe_path).lower()
+
         while (time.time() - start_time) * 1000 < timeout_ms:
-            def callback(hwnd, hwnds):
+            def callback(hwnd, results):
                 if win32gui.IsWindowVisible(hwnd):
+                    # 1. ウィンドウタイトルでの一致確認 (設定がある場合、優先度高)
+                    if target_title:
+                        window_title = win32gui.GetWindowText(hwnd)
+                        if target_title.lower() in window_title.lower():
+                            _, found_pid = win32process.GetWindowThreadProcessId(hwnd)
+                            results.append((hwnd, found_pid))
+                            return False
+
                     _, found_pid = win32process.GetWindowThreadProcessId(hwnd)
+                    # 2. 直接のPID一致を確認
                     if found_pid == pid:
-                        hwnds.append(hwnd)
+                        results.append((hwnd, found_pid))
+                        return False
+                    
+                    # 3. PID不一致でも実行ファイル名が一致すれば採用（リダイレクト対策）
+                    try:
+                        h_proc = win32api.OpenProcess(win32con.PROCESS_QUERY_INFORMATION | win32con.PROCESS_VM_READ, False, found_pid)
+                        found_exe = win32process.GetModuleFileNameEx(h_proc, 0)
+                        if os.path.basename(found_exe).lower() == target_exe_name:
+                            results.append((hwnd, found_pid))
+                            return False
+                    except:
+                        pass
                 return True
             
-            hwnds = []
-            win32gui.EnumWindows(callback, hwnds)
-            if hwnds:
-                return hwnds[0]
+            results = []
+            win32gui.EnumWindows(callback, results)
+            if results:
+                return results[0]
             time.sleep(0.5)
         return None
 
@@ -143,13 +177,29 @@ class WindowAsWallpaper:
             print(f"起動中: {item['path']}")
             try:
                 proc = subprocess.Popen(item['path'] + " " + item.get('args', ''))
+                
+                # ジョブオブジェクトにプロセスを割り当て
+                try:
+                    win32job.AssignProcessToJobObject(self.job_handle, proc._handle)
+                except:
+                    pass
+
                 self.child_processes.append(proc)
                 
                 # ウィンドウの出現を待機
                 wait_ms = item.get('wait_ms', 2000)
-                hwnd = self.find_window_for_process(proc.pid, wait_ms)
+                result = self.find_window_for_process(proc.pid, item['path'], wait_ms, item.get('title'))
                 
-                if hwnd:
+                if result:
+                    hwnd, found_pid = result
+                    # 真のウィンドウプロセスが別PID（リダイレクト等）の場合もジョブに追加
+                    if found_pid != proc.pid:
+                        try:
+                            h_found = win32api.OpenProcess(win32con.PROCESS_SET_QUOTA | win32con.PROCESS_TERMINATE, False, found_pid)
+                            win32job.AssignProcessToJobObject(self.job_handle, h_found)
+                        except:
+                            pass
+
                     # WorkerWを親に設定
                     win32gui.SetParent(hwnd, self.worker_w)
                     # スタイル設定
@@ -214,11 +264,9 @@ class WindowAsWallpaper:
         self.running = False
         if self.icon:
             self.icon.stop()
-        for proc in self.child_processes:
-            try:
-                proc.terminate()
-            except:
-                pass
+        # ジョブオブジェクトのハンドルを閉じることで、グループ化された全プロセスを終了させる
+        if self.job_handle:
+            self.job_handle.Close()
         print("終了しました。")
 
 if __name__ == "__main__":
@@ -231,8 +279,9 @@ if __name__ == "__main__":
         # サンプル設定ファイルの作成
         sample_config = [
             {
-                "path": "conhost.exe",
-                "args": "cmd.exe /k echo WindowAsWallpaper - conhost Sample",
+                "path": os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'conhost.exe'),
+                "args": "cmd.exe /k \"title conhost Sample && echo WindowAsWallpaper - conhost Sample\"",
+                "title": "conhost Sample",
                 "monitor": 0,
                 "x": 0, "y": 0, "w": 2, "h": 2,
                 "wait_ms": 1000,
