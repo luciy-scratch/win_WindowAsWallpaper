@@ -153,6 +153,14 @@ class WindowAsWallpaper:
                     # 位置設定
                     self.position_window(hwnd, item)
                     print(f"配置完了: {hwnd}")
+                    
+                    # ウィンドウからフォーカスを外す（デスクトップにフォーカスを戻す）
+                    shell_window = ctypes.windll.user32.GetShellWindow()
+                    if shell_window:
+                        try:
+                            win32gui.SetForegroundWindow(shell_window)
+                        except:
+                            pass
                 else:
                     print(f"警告: {item['path']} のウィンドウが見つかりませんでした。")
 
