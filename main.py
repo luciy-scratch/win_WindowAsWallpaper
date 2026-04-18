@@ -12,6 +12,9 @@ import ctypes
 import pystray
 from PIL import Image, ImageDraw
 
+# デバッグ用のフラグを定義
+switchConsoleVisible_inResidentMode = False # True=常駐モード中にコンソールウィンドウが非表示に設定される
+
 class WindowAsWallpaper:
     def __init__(self, config_path):
         self.config_path = config_path
@@ -187,7 +190,7 @@ class WindowAsWallpaper:
     def stay_resident(self):
         """システムトレイアイコンを表示して待機する"""
         # コンソールを非表示にする
-        if self.console_hwnd:
+        if self.console_hwnd and switchConsoleVisible_inResidentMode:
             win32gui.ShowWindow(self.console_hwnd, win32con.SW_HIDE)
 
         menu = pystray.Menu(
@@ -204,7 +207,7 @@ class WindowAsWallpaper:
     def cleanup(self):
         """終了時に子プロセスを停止する"""
         # コンソールを再表示する
-        if self.console_hwnd:
+        if self.console_hwnd and switchConsoleVisible_inResidentMode:
             win32gui.ShowWindow(self.console_hwnd, win32con.SW_SHOW)
 
         print("終了処理中...")
