@@ -8,13 +8,12 @@ import win32gui
 import win32con
 import win32api
 import win32process
-import win32job
 import ctypes
 import pystray
 from PIL import Image, ImageDraw
 
 # デバッグ用のフラグを定義
-switchConsoleVisible_inResidentMode = False # True=常駐モード中にコンソールウィンドウが非表示に設定される
+switchConsoleVisible_inResidentMode = True # True=常駐モード中にコンソールウィンドウが非表示に設定される
 
 class WindowAsWallpaper:
     def __init__(self, config_path):
@@ -24,17 +23,6 @@ class WindowAsWallpaper:
         self.icon = None
         self.running = True
         self.console_hwnd = ctypes.windll.kernel32.GetConsoleWindow()
-
-        # Windows Job Object を使用して、起動したプロセスをグループ化し、
-        # 親プロセス終了時に子プロセスも確実に終了するように設定する
-        self.job_handle = win32job.CreateJobObject(None, "")
-        extended_info = win32job.QueryInformationJobObject(
-            self.job_handle, win32job.JobObjectExtendedLimitInformation
-        )
-        extended_info['BasicLimitInformation']['LimitFlags'] |= win32job.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
-        win32job.SetInformationJobObject(
-            self.job_handle, win32job.JobObjectExtendedLimitInformation, extended_info
-        )
 
     def get_worker_w(self):
         """WorkerWの取得。Wallpaper Engineなどで既に生成されている場合はそれを検出し、なければ生成させる。"""
@@ -119,10 +107,8 @@ class WindowAsWallpaper:
     def find_window_for_process(self, pid, exe_path, timeout_ms, target_title=None):
         """プロセスのウィンドウが生成されるまで待機して取得する"""
         start_time = time.time()
-        target_exe_name = os.path.basename(exe_path).lower()
-
         while (time.time() - start_time) * 1000 < timeout_ms:
-            def callback(hwnd, results):
+            def callback(hwnd, hwnds):
                 if win32gui.IsWindowVisible(hwnd):
                     # 1. ウィンドウタイトルでの一致確認 (設定がある場合、優先度高)
                     if target_title:
@@ -149,10 +135,10 @@ class WindowAsWallpaper:
                         pass
                 return True
             
-            results = []
-            win32gui.EnumWindows(callback, results)
-            if results:
-                return results[0]
+            hwnds = []
+            win32gui.EnumWindows(callback, hwnds)
+            if hwnds:
+                return hwnds[0]
             time.sleep(0.5)
         return None
 
@@ -177,29 +163,13 @@ class WindowAsWallpaper:
             print(f"起動中: {item['path']}")
             try:
                 proc = subprocess.Popen(item['path'] + " " + item.get('args', ''))
-                
-                # ジョブオブジェクトにプロセスを割り当て
-                try:
-                    win32job.AssignProcessToJobObject(self.job_handle, proc._handle)
-                except:
-                    pass
-
                 self.child_processes.append(proc)
                 
                 # ウィンドウの出現を待機
                 wait_ms = item.get('wait_ms', 2000)
                 result = self.find_window_for_process(proc.pid, item['path'], wait_ms, item.get('title'))
                 
-                if result:
-                    hwnd, found_pid = result
-                    # 真のウィンドウプロセスが別PID（リダイレクト等）の場合もジョブに追加
-                    if found_pid != proc.pid:
-                        try:
-                            h_found = win32api.OpenProcess(win32con.PROCESS_SET_QUOTA | win32con.PROCESS_TERMINATE, False, found_pid)
-                            win32job.AssignProcessToJobObject(self.job_handle, h_found)
-                        except:
-                            pass
-
+                if hwnd:
                     # WorkerWを親に設定
                     win32gui.SetParent(hwnd, self.worker_w)
                     # スタイル設定
@@ -264,9 +234,11 @@ class WindowAsWallpaper:
         self.running = False
         if self.icon:
             self.icon.stop()
-        # ジョブオブジェクトのハンドルを閉じることで、グループ化された全プロセスを終了させる
-        if self.job_handle:
-            self.job_handle.Close()
+        for proc in self.child_processes:
+            try:
+                proc.terminate()
+            except:
+                pass
         print("終了しました。")
 
 if __name__ == "__main__":
