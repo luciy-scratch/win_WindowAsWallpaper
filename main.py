@@ -236,12 +236,20 @@ class WindowAsWallpaper:
         
 
     def _create_element_icon(self):
-        """トレイアイコン用の画像を生成する（青い背景に白い四角）"""
-        width, height = 64, 64
-        image = Image.new('RGB', (width, height), color=(31, 117, 204))
-        draw = ImageDraw.Draw(image)
-        # 中央に白い矩形を描画
-        draw.rectangle([16, 16, 48, 48], fill=(255, 255, 255))
+        """アイコンを取得する(アイコンファイルが見つからない時のフォールバック機能付き)"""
+        icon_file = "./assets/icon/icon.ico"
+        # アイコンファイルがあれば使用する
+        if os.path.exists(icon_file):
+            image = Image.open(icon_file)
+        # アイコンファイルが見つからない場合のフォールバック(青背景に白い四角)
+        else:
+            width, height = 64, 64
+            # 青背景の画像を作成
+            image = Image.new('RGB', (width, height), color=(31, 117, 204))
+            draw = ImageDraw.Draw(image)
+            # 中央に白い矩形を描画
+            draw.rectangle([16, 16, 48, 48], fill=(255, 255, 255))
+        # 読み込んだアイコンかフォールバックアイコンを表示
         return image
 
     def _on_exit_clicked(self, icon, item):
