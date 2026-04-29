@@ -154,9 +154,10 @@ class WindowAsWallpaper:
             
             results = []
             win32gui.EnumWindows(callback, results)
+            # 生成直後のウィンドウはリサイズに応答しない可能性があるので少し待機
+            time.sleep(1)
             if results:
                 return results[0]
-            time.sleep(0.5)
         return None
 
     def run(self):
