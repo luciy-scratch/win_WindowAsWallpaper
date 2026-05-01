@@ -17,6 +17,8 @@ from rich.rule import Rule
 
 # デバッグ用のフラグを定義
 switchConsoleVisible_inResidentMode = True # True=常駐モード中にコンソールウィンドウが非表示に設定される
+# コンフィグファイル変数(再起動処理で使用)
+config_file = str()
 
 class WindowAsWallpaper:
     def __init__(self, config_path):
@@ -254,7 +256,12 @@ class WindowAsWallpaper:
 
     def _on_exit_clicked(self, icon, item):
         """トレイメニューのExitがクリックされた際のコールバック"""
-        self.cleanup()
+        self.cleanup(False)
+
+    def _on_restart_clicked(self, icon, item):
+        """トレイメニューのRestartがクリックされた際のコールバック"""
+        # Exitの時と同様に終了処理を呼び出す(cleanup()内で処理)
+        self.cleanup(True)
 
     def stay_resident(self):
         """システムトレイアイコンを表示して待機する"""
@@ -263,7 +270,8 @@ class WindowAsWallpaper:
             win32gui.ShowWindow(self.console_hwnd, win32con.SW_HIDE)
 
         menu = pystray.Menu(
-            pystray.MenuItem("Exit", self._on_exit_clicked)
+            pystray.MenuItem("Exit", self._on_exit_clicked),
+            pystray.MenuItem("Restart", self._on_restart_clicked)
         )
         self.icon = pystray.Icon("WAW", self._create_element_icon(), "WindowAsWallpaper", menu)
         
@@ -273,11 +281,30 @@ class WindowAsWallpaper:
         except KeyboardInterrupt:
             self.cleanup()
 
-    def cleanup(self):
+    def cleanup(self, is_restart):
         """終了時に子プロセスを停止する"""
         # コンソールを再表示する
         if self.console_hwnd and switchConsoleVisible_inResidentMode:
             win32gui.ShowWindow(self.console_hwnd, win32con.SW_SHOW)
+
+        if is_restart:
+            # リスタート用処理 終了前にスクリプトの再実行を予約する
+            delay_time = 15 # 予約タイミングからの遅延時間
+            currentDirectory = os.getcwd() # カレントディレクトを取得
+            # 再実行予約コマンド
+            restart_commnad = f'cmd.exe /c "cd /d {currentDirectory} && timeout /t {delay_time} /nobreak && start .\\uv.exe run main.py {config_file}"'
+            # WindowsAPIからDETACHED_PROCESSフラグを付与して親の終了に巻き込まれないようにする
+            DETACHED_PROCESS = 0x00000008
+
+            # subprocessでコマンドを実行(別プロセス)
+            subprocess.Popen(
+                restart_commnad,
+                creationflags=DETACHED_PROCESS,
+                close_fds=True
+            ) # ファイルディスクリプタを継承しない
+            
+            self.console.print("[bold yellow]再起動を予約しました。[/bold yellow]")
+            self.console.print("[bold yellow]15秒後に再起動します。[/bold yellow]\n")
 
         self.console.print("[bold red]終了処理中...[/bold red]")
         self.running = False
@@ -293,7 +320,7 @@ class WindowAsWallpaper:
 
 if __name__ == "__main__":
     # 簡易的な設定ファイルのデフォルトパス
-    config_file = "settings.json"
+    config_file = "settings.json" # 共通変数
     if len(sys.argv) > 1:
         config_file = sys.argv[1]
 
